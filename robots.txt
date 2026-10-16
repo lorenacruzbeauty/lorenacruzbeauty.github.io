@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lorenacruzbeauty.github.io/sitemap.xml
