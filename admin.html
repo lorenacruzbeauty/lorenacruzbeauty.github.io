@@ -725,7 +725,7 @@
         </div>
       </section>
 
-      <div class="firma">Sistema creado por <strong class="firmaNombre"></strong> · <a class="firmaLink" target="_blank" rel="noopener">Soporte por WhatsApp</a></div>
+      <div class="firma">Sistema creado por <strong class="firmaNombre"></strong> · <a class="firmaSoporte" href="#">Pedir soporte</a></div>
     </main>
   </div>
 
@@ -979,6 +979,28 @@
       return r;
     }
 
+    // ---------- Soporte (adaptador mínimo para soporte-fox.js) ----------
+    // El widget espera un cliente de Supabase; acá se arma con el mismo token y la misma api().
+    const oyentesSoporte = [];
+    function sesionSoporte() { return token && !$("panel").hidden ? { user: { email: emailDeSesion() } } : null; }
+    function avisarSoporte() {
+      const s = sesionSoporte();
+      oyentesSoporte.forEach(function (f) { f(s ? "SIGNED_IN" : "SIGNED_OUT", s); });
+    }
+    const clienteSoporte = {
+      rpc: async function (nombre, args) {
+        try {
+          const r = await api("/rest/v1/rpc/" + nombre, { method: "POST", body: JSON.stringify(args || {}) });
+          const datos = await r.json().catch(function () { return null; });
+          return r.ok ? { data: datos, error: null } : { data: null, error: datos || { status: r.status } };
+        } catch (e) { return { data: null, error: e }; }
+      },
+      auth: {
+        getSession: function () { return Promise.resolve({ data: { session: sesionSoporte() }, error: null }); },
+        onAuthStateChange: function (f) { oyentesSoporte.push(f); return { data: { subscription: { unsubscribe: function () {} } } }; }
+      }
+    };
+
     // ---------- Login ----------
     async function entrar(e) {
       if (e) e.preventDefault();
@@ -1017,6 +1039,7 @@
       document.querySelectorAll(".modal").forEach(function (m) { m.hidden = true; });
       document.body.classList.remove("sin-scroll");
       avisoLogin(mensaje || "");
+      avisarSoporte();
     }
 
     async function esDuena() {
@@ -1032,6 +1055,7 @@
       if (!habilitada) { salir("Esta cuenta no está habilitada para administrar este negocio. Pedile ayuda a quien armó tu página."); return; }
       $("login").hidden = true;
       $("panel").hidden = false;
+      avisarSoporte();
       $("emailCuenta").textContent = emailDeSesion() || "tu email";
       if (!$("fecha").value) $("fecha").value = fechaISO(new Date());
       if (!$("rFecha").value) { const m = new Date(); m.setDate(m.getDate() + 1); $("rFecha").value = fechaISO(m); }
@@ -2903,6 +2927,18 @@
     }, 60000);
 
     if (token) mostrarPanel();
+  </script>
+  <script src="soporte-fox.js"></script>
+  <script>
+    if (window.FoxSoporte) {
+      FoxSoporte.init(clienteSoporte, { accent: "#664e30", onAccent: "#f6f0e4" }); // --bronce y --papel del panel
+      // Sin botón flotante: se abre desde el enlace "Pedir soporte" del pie del panel
+      const fox = document.getElementById("fox-soporte");
+      if (fox && fox.shadowRoot) { const st = document.createElement("style"); st.textContent = ".fab{display:none!important}"; fox.shadowRoot.appendChild(st); }
+    }
+    document.querySelectorAll(".firmaSoporte").forEach(function (x) {
+      x.onclick = function (e) { e.preventDefault(); if (window.FoxSoporte) FoxSoporte.open(); };
+    });
   </script>
 </body>
 </html>
