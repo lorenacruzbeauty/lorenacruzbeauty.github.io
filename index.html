@@ -24,6 +24,12 @@
 
   <link rel="icon" type="image/png" href="assets/images/brand/lc-icono.png">
   <link rel="apple-touch-icon" href="assets/images/brand/lc-icono.png">
+  <!-- Para poder instalar la página como app en el celular (manifest.webmanifest + sw.js) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Lorena Cruz">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Si cambiás de base de datos, cambiá también esta dirección (es la misma que SUPABASE_URL) -->
@@ -643,6 +649,40 @@
     }
     .toast.visible { opacity: 1; transform: translate(-50%, 0); }
 
+    /* ============ BOTÓN PARA INSTALAR LA APP ============ */
+    .instalar { position: fixed; left: 20px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 46; max-width: calc(100vw - 112px); transition: transform .4s var(--suave-e), opacity .3s; }
+    .instalar-btn {
+      position: relative; display: inline-flex; align-items: center; gap: 12px; height: 56px; padding: 0 24px 0 18px; max-width: 100%;
+      border: 1px solid var(--tinta); border-radius: 999px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+      background: linear-gradient(135deg, #dccaa6 0%, #c8b393 45%, #b08f60 100%); color: var(--tinta);
+      font: 500 11.5px/1.2 var(--sans); letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
+      box-shadow: 0 14px 30px -12px rgba(23, 18, 14, .6), inset 0 1px 0 rgba(255, 255, 255, .45);
+      animation: pulsoInstalar 2.8s ease-out infinite; transition: transform .4s var(--suave-e), background .4s, color .4s;
+    }
+    .instalar-btn:hover { transform: translateY(-3px); background: var(--tinta); color: var(--marfil); animation: none; }
+    .instalar-btn:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; }
+    .instalar-ico { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--tinta); color: var(--marfil); transition: background .4s, color .4s; }
+    .instalar-btn:hover .instalar-ico { background: var(--marfil); color: var(--tinta); }
+    .instalar-ico svg { width: 16px; height: 16px; display: block; }
+    .instalar-cerrar {
+      position: absolute; top: -12px; right: -8px; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; cursor: pointer;
+      border: 1px solid var(--marfil); border-radius: 50%; background: var(--tinta); color: var(--marfil); font: 400 18px/1 var(--sans);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .instalar-cerrar:focus-visible { outline: 2px solid var(--tinta); outline-offset: 2px; }
+    @keyframes pulsoInstalar {
+      0%   { box-shadow: 0 14px 30px -12px rgba(23, 18, 14, .6), inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 0 rgba(163, 132, 90, .6); }
+      70%  { box-shadow: 0 14px 30px -12px rgba(23, 18, 14, .6), inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 16px rgba(163, 132, 90, 0); }
+      100% { box-shadow: 0 14px 30px -12px rgba(23, 18, 14, .6), inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 0 rgba(163, 132, 90, 0); }
+    }
+    @media (max-width: 640px) { .instalar.escondido { opacity: 0; transform: translateY(24px) scale(.9); pointer-events: none; } }
+    @media (prefers-reduced-motion: reduce) { .instalar-btn { animation: none; } }
+    .pasos-instalar { margin: 0 0 26px; padding: 0; list-style: none; counter-reset: paso; display: grid; gap: 14px; }
+    .pasos-instalar li { counter-increment: paso; display: grid; grid-template-columns: 32px 1fr; gap: 14px; align-items: start; color: var(--cafe); }
+    .pasos-instalar li::before { content: counter(paso); width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--oro-fino); border-radius: 50%; font: 400 17px/1 var(--display); color: var(--bronce); }
+    .pasos-instalar svg { display: inline-block; width: 18px; height: 18px; vertical-align: -3px; color: var(--tinta); }
+    .nota-instalar { margin: -10px 0 24px; font-size: 14px; color: var(--suave); }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
       html { scroll-behavior: auto; }
@@ -891,6 +931,30 @@
   <aside aria-label="Contacto rápido">
     <a id="wa" class="flotante" target="_blank" rel="noopener" aria-label="Escribinos por WhatsApp" hidden><span data-icono="chat"></span><span class="wa-texto">WhatsApp</span></a>
   </aside>
+
+  <!-- Botón para instalar la página como app (aparece solo si el celular lo permite) -->
+  <div id="instalar" class="instalar" hidden>
+    <button type="button" id="instalarBtn" class="instalar-btn" aria-label="Instalar la app de Lorena Cruz Beauty Studio">
+      <span class="instalar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg></span>
+      <span>Instalar app</span>
+    </button>
+    <button type="button" id="instalarCerrar" class="instalar-cerrar" aria-label="Ocultar el botón de instalar">&times;</button>
+  </div>
+
+  <!-- Pasos para instalar en iPhone (Safari no permite hacerlo con un botón) -->
+  <div id="modalInstalar" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalInstalarTitulo">
+    <div class="modal-caja">
+      <h3 id="modalInstalarTitulo">Instalá la app</h3>
+      <p>Así la tenés en la pantalla de inicio y reservás más rápido:</p>
+      <ol class="pasos-instalar">
+        <li><span>Tocá el botón <strong>Compartir</strong> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg> de Safari.</span></li>
+        <li><span>Bajá y elegí <strong>Agregar a pantalla de inicio</strong>.</span></li>
+        <li><span>Tocá <strong>Agregar</strong>. Listo.</span></li>
+      </ol>
+      <p class="nota-instalar">Si estás en otro navegador, abrí esta página en Safari.</p>
+      <button type="button" id="modalInstalarCerrar" class="btn btn-bloque">Entendido</button>
+    </div>
+  </div>
 
   <!-- Visor de fotos -->
   <div id="visor" class="visor" hidden role="dialog" aria-modal="true" aria-label="Foto ampliada">
@@ -2235,6 +2299,7 @@
       const obsWa = new IntersectionObserver(function (ents) {
         ents.forEach(function (e) { enVista[e.target.id] = e.isIntersecting; });
         $("wa").classList.toggle("escondido", enVista.reservas || enVista.miTurno || false);
+        $("instalar").classList.toggle("escondido", enVista.reservas || enVista.miTurno || false);
       }, { rootMargin: "-30% 0px -30% 0px" });
       obsWa.observe($("reservas"));
       obsWa.observe($("miTurno"));
@@ -2378,6 +2443,50 @@
       if (g.ini === g.fin) return cap(nombresDias[g.ini]);
       return cap(nombresDias[g.ini]) + (g.dias.length === 2 ? " y " : " a ") + nombresDias[g.fin];
     }
+    // ===== INSTALAR COMO APP =====
+    // Android / Chrome: el navegador avisa que se puede instalar y el botón lanza el cuadro nativo.
+    // iPhone / iPad: Safari no lo permite con un botón, así que se muestran los pasos.
+    (function () {
+      const caja = $("instalar"), btn = $("instalarBtn"), cerrar = $("instalarCerrar");
+      const hoja = $("modalInstalar"), hojaCerrar = $("modalInstalarCerrar");
+      if (!caja || !btn) return;
+      let evento = null;
+      const ua = navigator.userAgent || "";
+      const esIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      function yaInstalada() {
+        try { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { return false; }
+      }
+      function lo_cerro() { try { return sessionStorage.getItem("lc-instalar-cerrado") === "1"; } catch (e) { return false; } }
+      function mostrar() { if (!yaInstalada() && !lo_cerro()) caja.hidden = false; }
+      function abrirHoja() { hoja.hidden = false; hojaCerrar.focus(); }
+      function cerrarHoja() { if (hoja.hidden) return; hoja.hidden = true; btn.focus(); }
+
+      window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); evento = e; mostrar(); });
+      window.addEventListener("appinstalled", function () { evento = null; caja.hidden = true; hoja.hidden = true; });
+      if (esIOS) mostrar();
+
+      btn.addEventListener("click", function () {
+        if (evento) {
+          const e = evento; evento = null;
+          e.prompt();
+          e.userChoice.then(function () { caja.hidden = true; }).catch(function () {});
+        } else if (esIOS) {
+          abrirHoja();
+        }
+      });
+      cerrar.addEventListener("click", function () {
+        caja.hidden = true;
+        try { sessionStorage.setItem("lc-instalar-cerrado", "1"); } catch (e) {}
+      });
+      hojaCerrar.addEventListener("click", cerrarHoja);
+      hoja.addEventListener("click", function (e) { if (e.target === hoja) cerrarHoja(); });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") cerrarHoja(); });
+
+      if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+        window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+      }
+    })();
+
     iniciar();
   </script>
 </body>
