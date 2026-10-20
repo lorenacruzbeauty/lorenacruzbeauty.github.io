@@ -1,0 +1,15 @@
+{
+  "name": "Lorena Cruz Beauty Studio",
+  "short_name": "Lorena Cruz",
+  "description": "Reservá tu turno online en Lorena Cruz Beauty Studio, Orán, Salta.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eadfcc",
+  "theme_color": "#eadfcc",
+  "icons": [
+    { "src": "assets/images/brand/lc-icono.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/images/brand/lc-icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
