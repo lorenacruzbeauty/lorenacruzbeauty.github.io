@@ -501,6 +501,12 @@
     .rec-datos { margin-top: 3px; font-size: 13.5px; line-height: 1.5; color: var(--suave); overflow-wrap: anywhere; }
     .rec-monto { font: 500 15px/1.3 var(--sans); color: var(--tinta); font-variant-numeric: tabular-nums lining-nums; }
     .rec .tag { margin-top: 6px; }
+    .cr-sel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; color: var(--suave); font-size: 14px; }
+    .cr-resumen { white-space: pre-wrap; margin: 0 0 14px; font: inherit; font-size: 14.5px; line-height: 1.75; overflow-wrap: anywhere; }
+    .est-stars { color: var(--bronce); letter-spacing: 2px; font-size: 15px; }
+    .est-stars .vacia { opacity: .25; }
+    .op-texto { margin: 6px 0 0; color: var(--tinta); font-size: 14.5px; overflow-wrap: anywhere; }
+    .tag.oculta { background: rgba(23, 18, 14, .06); color: var(--suave); }
   </style>
 </head>
 <body>
@@ -606,6 +612,22 @@
         </div>
         <p class="nota">Tocá "Enviar recordatorio" y se abre WhatsApp con el mensaje listo (incluye el link para que el cliente cancele). Solo falta apretar enviar.</p>
         <div id="rLista" class="agenda"></div>
+
+        <div class="tarjeta">
+          <div class="titulo-lista"><h2>Lista de espera</h2><span class="total" id="crEsperaTotal"></span></div>
+          <p class="nota">Personas que se anotaron cuando el día estaba completo. Si se libera un lugar, avisales con un toque: se abre WhatsApp con el mensaje listo.</p>
+          <div id="crEspera" class="agenda"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="titulo-lista"><h2>Volver a invitar</h2><span class="total" id="crVolverTotal"></span></div>
+          <p class="nota">Clientes que ya vinieron y hace tiempo que no vuelven. Un mensaje a tiempo los trae de nuevo. Los que invitás desaparecen de la lista por 30 días.</p>
+          <label class="cr-sel">Sin venir hace más de
+            <select id="crDias" class="input input-chico" style="width:auto">
+              <option value="30">30 días</option><option value="45" selected>45 días</option><option value="60">60 días</option><option value="90">90 días</option>
+            </select>
+          </label>
+          <div id="crVolver" class="agenda"></div>
+        </div>
       </section>
 
       <!-- PAGOS -->
@@ -643,6 +665,12 @@
           <p class="nota es-rango" id="esRango"></p>
         </div>
 
+        <div class="tarjeta">
+          <h2>Tu semana</h2>
+          <p class="nota">Los últimos 7 días resumidos, listos para copiar o mandarte por WhatsApp.</p>
+          <pre id="crSemana" class="cr-resumen"></pre>
+          <div id="crSemanaAcc" class="item-acc"></div>
+        </div>
         <div id="esContenido" aria-busy="false"></div>
         <p id="esAnuncio" class="sr" role="status"></p>
 
@@ -654,6 +682,16 @@
           <div id="esCliLista" class="es-clis"></div>
         </div>
 
+        <div class="tarjeta">
+          <div class="titulo-lista"><h2>Opiniones</h2><span class="total" id="crOResumen"></span></div>
+          <p class="nota">Las opiniones de clientas se publican solas en la página. Si alguna no corresponde, ocultala y deja de verse.</p>
+          <div id="crOLista" class="agenda"></div>
+        </div>
+        <div class="tarjeta">
+          <h2>Pedir opinión</h2>
+          <p class="nota">Clientas de los últimos días que ya vinieron y todavía no dejaron su opinión. Con un toque les mandás el link por WhatsApp.</p>
+          <div id="crOPedir" class="agenda"></div>
+        </div>
         <details class="es-def">
           <summary>Cómo se cuentan estos números</summary>
           <ul>
@@ -1046,6 +1084,7 @@
 
     function salir(mensaje) {
       token = null; refresco = null;
+      if (typeof crLimpiar === "function") crLimpiar();
       esLimpiar();
       try {
         ["token", "refresco"].forEach(function (k) { sessionStorage.removeItem(k); localStorage.removeItem(k); });
@@ -1088,11 +1127,347 @@
         if (activa) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
       });
       window.scrollTo(0, 0);
-      if (vista === "vRecord") cargarRecord();
+      if (vista === "vRecord") { cargarRecord(); crCargarRecord(); }
       if (vista === "vPagos") cargarPagos();
-      if (vista === "vStats") abrirStats();
+      if (vista === "vStats") { abrirStats(); crCargarStats(); }
       if (vista === "vAgenda") cargar();
       if (vista === "vConfig") cargarRecibos();
+    }
+
+
+    // ---------- Crecer: lista de espera, volver a invitar y resumen semanal ----------
+    const CR = { turnos: [], servicios: [], espera: [], cargado: false };
+
+    async function crTraer(ruta) {
+      const filas = [];
+      for (let desde = 0; desde < 10000; desde += 1000) {
+        const r = await api(ruta + "&limit=1000&offset=" + desde);
+        if (!r.ok) throw new Error("Error " + r.status);
+        const parte = await r.json();
+        filas.push.apply(filas, parte);
+        if (parte.length < 1000) break;
+      }
+      return filas;
+    }
+
+    function crPrimerNombre(n) { return limpiarNombre(n).trim().split(/\s+/)[0] || ""; }
+    function crDiasEntre(a, b) { return Math.round((aFecha(b) - aFecha(a)) / 86400000); }
+    function crBase() { return new URL("index.html", location.href).href; }
+    function crPasado(t) { return new Date(t.fecha + "T" + String(t.hora).slice(0, 5) + ":00") < new Date(); }
+
+    function crInvitados() {
+      try { return JSON.parse(localStorage.getItem("crInvitados") || "{}") || {}; } catch (e) { return {}; }
+    }
+    function crMarcarInvitado(tel) {
+      try {
+        const m = crInvitados();
+        m[waNumero(tel)] = fechaISO(new Date());
+        localStorage.setItem("crInvitados", JSON.stringify(m));
+      } catch (e) { /* sin almacenamiento: simplemente no se recuerda */ }
+    }
+
+    async function crCargarTurnos() {
+      const d = new Date(); d.setDate(d.getDate() - 365);
+      const res = await Promise.all([
+        crTraer("/rest/v1/turnos?fecha=gte." + fechaISO(d) + "&estado=in.(activo,cancelado)&servicio=neq.BLOQUEO&order=fecha.asc,hora.asc&select=id,fecha,hora,servicio,nombre,telefono,estado,token"),
+        crTraer("/rest/v1/servicios?select=nombre,precio&order=id.asc")
+      ]);
+      CR.turnos = res[0]; CR.servicios = res[1]; CR.cargado = true;
+    }
+
+    // ----- Lista de espera
+    async function crCargarEspera() {
+      const cont = $("crEspera");
+      try {
+        const r = await api("/rest/v1/lista_espera?estado=eq.esperando&fecha=gte." + fechaISO(new Date()) + "&order=fecha.asc,creado.asc&select=id,fecha,servicio,nombre,telefono,creado&limit=100");
+        if (!r.ok) throw new Error();
+        CR.espera = await r.json();
+        crDibujarEspera();
+      } catch (e) {
+        CR.espera = [];
+        $("crEsperaTotal").textContent = "";
+        cont.replaceChildren(el("div", "vacio", "No se pudo cargar la lista de espera."));
+      }
+    }
+
+    async function crCambiarEspera(f, quitar, boton) {
+      boton.disabled = true;
+      try {
+        const r = quitar
+          ? await api("/rest/v1/lista_espera?id=eq." + f.id, { method: "DELETE", headers: { "Prefer": "return=minimal" } })
+          : await api("/rest/v1/lista_espera?id=eq." + f.id, { method: "PATCH", headers: { "Prefer": "return=minimal" }, body: JSON.stringify({ estado: "avisado" }) });
+        if (!r.ok) throw new Error();
+        CR.espera = CR.espera.filter(function (x) { return x.id !== f.id; });
+        crDibujarEspera();
+        if (quitar) aviso("ok", "Quitado de la lista de espera.");
+      } catch (e) { boton.disabled = false; aviso("error", "No se pudo completar. Probá de nuevo."); }
+    }
+
+    function crDibujarEspera() {
+      const cont = $("crEspera");
+      cont.replaceChildren();
+      $("crEsperaTotal").textContent = CR.espera.length ? CR.espera.length + (CR.espera.length === 1 ? " persona" : " personas") : "";
+      if (!CR.espera.length) { cont.appendChild(el("div", "vacio", "Nadie en la lista de espera por ahora.")); return; }
+      CR.espera.forEach(function (f) {
+        const fila = el("div", "item");
+        const h = el("div", "item-hora");
+        const d = aFecha(f.fecha);
+        h.appendChild(el("strong", "", d.getDate() + "/" + (d.getMonth() + 1)));
+        h.appendChild(el("small", "", nombresCortos[d.getDay()]));
+        fila.appendChild(h);
+        const caja = el("div", "item-caja");
+        const info = el("div");
+        info.appendChild(el("div", "item-nombre", limpiarNombre(f.nombre)));
+        info.appendChild(el("div", "item-det", f.servicio + " · " + fechaLarga(f.fecha)));
+        caja.appendChild(info);
+        const acc = el("div", "item-acc");
+        const wa = enlaceWA("Avisar", f.telefono,
+          "Hola " + crPrimerNombre(f.nombre) + "! Se liberó un lugar para " + f.servicio + " el " + fechaLarga(f.fecha) +
+          " en " + nombreNegocio() + ". Si todavía lo querés, reservalo acá antes de que lo tome otra persona: " + crBase());
+        wa.onclick = function () { setTimeout(function () { crCambiarEspera(f, false, wa); }, 400); };
+        acc.appendChild(wa);
+        const q = el("button", "btn btn-borde", "Quitar");
+        q.type = "button";
+        q.onclick = function () { crCambiarEspera(f, true, q); };
+        acc.appendChild(q);
+        caja.appendChild(acc);
+        fila.appendChild(caja);
+        cont.appendChild(fila);
+      });
+    }
+
+    // Cuando se cancela un turno: ¿hay gente esperando ese día?
+    async function crEsperaDia(fecha) {
+      try {
+        const r = await api("/rest/v1/lista_espera?estado=eq.esperando&fecha=eq." + fecha + "&select=id");
+        if (!r.ok) return "";
+        const n = (await r.json()).length;
+        return n ? " Hay " + n + (n === 1 ? " persona" : " personas") + " en lista de espera para ese día: avisales desde la pestaña Recordar." : "";
+      } catch (e) { return ""; }
+    }
+
+    // ----- Volver a invitar
+    function crDibujarVolver() {
+      const cont = $("crVolver");
+      cont.replaceChildren();
+      const dias = Number($("crDias").value) || 45;
+      const hoy = fechaISO(new Date());
+      const porTel = {};
+      CR.turnos.forEach(function (t) {
+        if (t.estado !== "activo" || !t.telefono) return;
+        const k = waNumero(t.telefono);
+        const c = porTel[k] = porTel[k] || { tel: t.telefono, nombre: "", visitas: 0, ultima: "", futuro: false, servicios: {} };
+        if (t.fecha >= hoy) { c.futuro = true; return; }
+        c.visitas++;
+        c.servicios[t.servicio] = (c.servicios[t.servicio] || 0) + 1;
+        if (t.fecha > c.ultima) { c.ultima = t.fecha; c.nombre = t.nombre; }
+      });
+      const inv = crInvitados();
+      let yaInvitados = 0;
+      const lista = Object.keys(porTel).map(function (k) { return porTel[k]; }).filter(function (c) {
+        if (c.futuro || !c.ultima) return false;
+        const sin = crDiasEntre(c.ultima, hoy);
+        if (sin < dias) return false;
+        const i = inv[waNumero(c.tel)];
+        if (i && crDiasEntre(i, hoy) < 30) { yaInvitados++; return false; }
+        return true;
+      }).sort(function (a, b) { return b.visitas - a.visitas || (a.ultima < b.ultima ? 1 : -1); });
+      $("crVolverTotal").textContent = lista.length ? lista.length + (lista.length === 1 ? " cliente" : " clientes") : "";
+      if (!lista.length) {
+        cont.appendChild(el("div", "vacio", yaInvitados ? "Ya invitaste a todos los que corresponde. Cuando pasen 30 días podés volver a escribirles." : "Nadie para invitar por ahora: todos tus clientes volvieron hace poco."));
+        return;
+      }
+      lista.slice(0, 15).forEach(function (c) {
+        const fila = el("div", "item");
+        const h = el("div", "item-hora");
+        h.appendChild(el("strong", "", crDiasEntre(c.ultima, hoy) + " d"));
+        h.appendChild(el("small", "", "sin venir"));
+        fila.appendChild(h);
+        const caja = el("div", "item-caja");
+        const info = el("div");
+        info.appendChild(el("div", "item-nombre", limpiarNombre(c.nombre)));
+        const fav = Object.keys(c.servicios).sort(function (a, b) { return c.servicios[b] - c.servicios[a]; })[0];
+        info.appendChild(el("div", "item-det", c.visitas + (c.visitas === 1 ? " visita" : " visitas") + " · suele pedir " + fav));
+        caja.appendChild(info);
+        const acc = el("div", "item-acc");
+        const wa = enlaceWA("Invitar", c.tel,
+          "Hola " + crPrimerNombre(c.nombre) + "! Hace un tiempo que no te vemos por " + nombreNegocio() + " y nos encantaría tenerte de vuelta. " +
+          "Si querés reservar, elegí día y horario acá: " + crBase());
+        wa.onclick = function () { crMarcarInvitado(c.tel); setTimeout(crDibujarVolver, 400); };
+        acc.appendChild(wa);
+        caja.appendChild(acc);
+        fila.appendChild(caja);
+        cont.appendChild(fila);
+      });
+      if (lista.length > 15) cont.appendChild(el("p", "nota centro", "Se muestran los 15 que más vinieron. Al invitar a alguien, aparece el siguiente."));
+    }
+
+    async function crCargarRecord() {
+      crCargarEspera();
+      try { await crCargarTurnos(); crDibujarVolver(); }
+      catch (e) { $("crVolver").replaceChildren(el("div", "vacio", "No se pudieron cargar los clientes.")); }
+    }
+
+    // ----- Resumen semanal
+    function crTextoSemana() {
+      const ahora = new Date();
+      const hoy = fechaISO(ahora);
+      const mover = function (n) { const d = new Date(); d.setDate(d.getDate() + n); return fechaISO(d); };
+      const desde = mover(-6), prevDesde = mover(-13), prevHasta = mover(-7), hasta7 = mover(7);
+      const precios = {};
+      CR.servicios.forEach(function (x) { precios[String(x.nombre).toLowerCase()] = Number(x.precio) || 0; });
+      const hechos = CR.turnos.filter(function (t) { return t.estado === "activo" && crPasado(t) && t.fecha >= desde && t.fecha <= hoy; });
+      const previos = CR.turnos.filter(function (t) { return t.estado === "activo" && t.fecha >= prevDesde && t.fecha <= prevHasta; });
+      const cancel = CR.turnos.filter(function (t) { return t.estado === "cancelado" && t.fecha >= desde && t.fecha <= hoy; });
+      const proximos = CR.turnos.filter(function (t) { return t.estado === "activo" && !crPasado(t) && t.fecha <= hasta7; });
+      const ingresos = hechos.reduce(function (a, t) { return a + (precios[String(t.servicio).toLowerCase()] || 0); }, 0);
+      const tels = {};
+      hechos.forEach(function (t) { tels[t.telefono ? waNumero(t.telefono) : "n:" + t.nombre] = true; });
+      const primera = {};
+      CR.turnos.forEach(function (t) {
+        if (t.estado !== "activo" || !t.telefono) return;
+        const k = waNumero(t.telefono);
+        if (!primera[k] || t.fecha < primera[k]) primera[k] = t.fecha;
+      });
+      const nuevos = Object.keys(tels).filter(function (k) { return primera[k] && primera[k] >= desde && primera[k] <= hoy; }).length;
+      const cuenta = {};
+      hechos.forEach(function (t) { cuenta[t.servicio] = (cuenta[t.servicio] || 0) + 1; });
+      const top = Object.keys(cuenta).sort(function (a, b) { return cuenta[b] - cuenta[a]; })[0];
+      const dif = hechos.length - previos.length;
+      const dm = function (iso) { const d = aFecha(iso); return d.getDate() + "/" + (d.getMonth() + 1); };
+      const lineas = [
+        "📊 Tu semana en " + nombreNegocio() + " (" + dm(desde) + " al " + dm(hoy) + ")",
+        "• Turnos realizados: " + hechos.length + (previos.length || hechos.length ? " (" + (dif > 0 ? "+" : "") + dif + " vs. la semana anterior)" : ""),
+        "• Ingresos estimados: " + plata(ingresos),
+        "• Clientes distintos: " + Object.keys(tels).length + (nuevos ? " (" + nuevos + (nuevos === 1 ? " nuevo)" : " nuevos)") : ""),
+        "• Cancelaciones: " + cancel.length
+      ];
+      if (top) lineas.push("• Lo más pedido: " + top + " (" + cuenta[top] + ")");
+      lineas.push("• Próximos 7 días: " + proximos.length + (proximos.length === 1 ? " turno" : " turnos"));
+      if (CR.espera.length) lineas.push("• En lista de espera: " + CR.espera.length);
+      return lineas.join("\n");
+    }
+
+    function crDibujarSemana() {
+      const texto = crTextoSemana();
+      $("crSemana").textContent = texto;
+      const acc = $("crSemanaAcc");
+      acc.replaceChildren();
+      const copiar = el("button", "btn btn-borde", "Copiar resumen");
+      copiar.type = "button";
+      copiar.onclick = async function () {
+        try { await navigator.clipboard.writeText(texto); aviso("ok", "Resumen copiado."); }
+        catch (e) { aviso("error", "No se pudo copiar. Seleccionalo y copialo a mano."); }
+      };
+      acc.appendChild(copiar);
+      const yo = S.ajustes && S.ajustes.whatsapp;
+      if (yo) acc.appendChild(enlaceWA("Mandármelo por WhatsApp", yo, texto));
+    }
+
+    async function crCargarStats() {
+      try {
+        await Promise.all([crCargarTurnos(), crCargarEspera()]);
+        crDibujarSemana();
+      } catch (e) { $("crSemana").textContent = "No se pudo armar el resumen. Tocá otra pestaña y volvé a entrar."; }
+      try {
+        const r = await api("/rest/v1/opiniones?order=creado.desc&select=id,turno_id,autor,estrellas,texto,visible,creado&limit=200");
+        if (!r.ok) throw new Error();
+        CR.opiniones = await r.json();
+      } catch (e) { CR.opiniones = null; }
+      crDibujarOpiniones();
+      crDibujarPedirOpinion();
+    }
+
+    function crLimpiar() {
+      CR.turnos = []; CR.servicios = []; CR.espera = []; CR.cargado = false;
+      ["crEspera", "crVolver", "crSemanaAcc","crOLista","crOPedir"].forEach(function (id) { const e = $(id); if (e) e.replaceChildren(); });
+      if ($("crSemana")) $("crSemana").textContent = "";
+    }
+    if ($("crDias")) $("crDias").onchange = function () { if (CR.cargado) crDibujarVolver(); };
+
+    // ----- Opiniones (panel de Lorena)
+    function crEstrellas(n) {
+      const c = el("span", "est-stars");
+      c.setAttribute("role", "img"); c.setAttribute("aria-label", n + " de 5 estrellas");
+      for (let i = 1; i <= 5; i++) c.appendChild(el("span", i > n ? "vacia" : "", "★"));
+      return c;
+    }
+
+    function crDibujarOpiniones() {
+      const lista = $("crOLista");
+      lista.replaceChildren();
+      const ops = CR.opiniones;
+      if (ops === null || ops === undefined) { $("crOResumen").textContent = ""; lista.appendChild(el("div", "vacio", "No se pudieron cargar las opiniones.")); return; }
+      const vis = ops.filter(function (o) { return o.visible; });
+      $("crOResumen").textContent = vis.length
+        ? (vis.reduce(function (a, o) { return a + o.estrellas; }, 0) / vis.length).toFixed(1).replace(".", ",") + " ★ · " + vis.length + (vis.length === 1 ? " opinión" : " opiniones")
+        : "";
+      if (!ops.length) { lista.appendChild(el("div", "vacio", "Todavía no hay opiniones. Pedísela a tus clientas desde la sección de abajo.")); return; }
+      ops.slice(0, 20).forEach(function (o) {
+        const fila = el("div", "item");
+        const h = el("div", "item-hora");
+        const d = new Date(o.creado);
+        h.appendChild(el("strong", "", d.getDate() + "/" + (d.getMonth() + 1)));
+        fila.appendChild(h);
+        const caja = el("div", "item-caja");
+        const info = el("div");
+        const cab = el("div", "item-nombre", o.autor + " ");
+        cab.appendChild(crEstrellas(o.estrellas));
+        info.appendChild(cab);
+        info.appendChild(el("p", "op-texto", o.texto));
+        if (!o.visible) info.appendChild(el("span", "tag oculta", "Oculta en la página"));
+        caja.appendChild(info);
+        const acc = el("div", "item-acc");
+        const b = el("button", "btn btn-borde", o.visible ? "Ocultar" : "Volver a mostrar");
+        b.type = "button";
+        b.onclick = async function () {
+          b.disabled = true;
+          try {
+            const r = await api("/rest/v1/opiniones?id=eq." + o.id, { method: "PATCH", headers: { "Prefer": "return=minimal" }, body: JSON.stringify({ visible: !o.visible }) });
+            if (!r.ok) throw new Error();
+            o.visible = !o.visible;
+            aviso("ok", o.visible ? "La opinión vuelve a mostrarse." : "Opinión oculta.");
+            crDibujarOpiniones();
+          } catch (e) { b.disabled = false; aviso("error", "No se pudo cambiar. Probá de nuevo."); }
+        };
+        acc.appendChild(b);
+        caja.appendChild(acc);
+        fila.appendChild(caja);
+        lista.appendChild(fila);
+      });
+    }
+
+    function crDibujarPedirOpinion() {
+      const cont = $("crOPedir");
+      cont.replaceChildren();
+      const ya = {};
+      (CR.opiniones || []).forEach(function (o) { ya[o.turno_id] = true; });
+      const d = new Date(); d.setDate(d.getDate() - 3);
+      const desde = fechaISO(d);
+      const lista = CR.turnos.filter(function (t) {
+        return t.estado === "activo" && t.telefono && t.token && t.fecha >= desde && crPasado(t) && !ya[t.id];
+      }).reverse();
+      if (!lista.length) { cont.appendChild(el("div", "vacio", "No hay clientas pendientes de opinar.")); return; }
+      lista.slice(0, 15).forEach(function (t) {
+        const nombre = limpiarNombre(t.nombre);
+        const fila = el("div", "item");
+        const h = el("div", "item-hora");
+        const f = aFecha(t.fecha);
+        h.appendChild(el("strong", "", f.getDate() + "/" + (f.getMonth() + 1)));
+        h.appendChild(el("small", "", String(t.hora).slice(0, 5)));
+        fila.appendChild(h);
+        const caja = el("div", "item-caja");
+        const info = el("div");
+        info.appendChild(el("div", "item-nombre", nombre));
+        info.appendChild(el("div", "item-det", t.servicio));
+        caja.appendChild(info);
+        const acc = el("div", "item-acc");
+        acc.appendChild(enlaceWA("Pedir opinión", t.telefono,
+          "Hola " + crPrimerNombre(t.nombre) + "! Gracias por venir a " + nombreNegocio() + ". ¿Nos dejás tu opinión? Te lleva 20 segundos: " + crBase() + "?turno=" + t.token));
+        caja.appendChild(acc);
+        fila.appendChild(caja);
+        cont.appendChild(fila);
+      });
     }
 
     // ---------- Utilidades ----------
@@ -1438,9 +1813,10 @@
           method: "PATCH", headers: { "Prefer": "return=minimal" }, body: JSON.stringify(cambios)
         });
         if (!r.ok) throw new Error();
-        aviso("ok", esBloqueo ? "Bloqueo quitado." :
+        const espera = esBloqueo ? "" : await crEsperaDia($("fecha").value);
+        aviso("ok", (esBloqueo ? "Bloqueo quitado." :
           t.pago_estado === "pagado" ? "Turno cancelado. Tenés que devolver la seña desde Mercado Pago (mirá la pestaña Pagos)." :
-          "Turno cancelado. Avisale al cliente con el botón de WhatsApp.");
+          "Turno cancelado. Avisale al cliente con el botón de WhatsApp.") + espera);
         cargar();
       } catch (e) { aviso("error", "No se pudo completar. Probá de nuevo."); }
     }
