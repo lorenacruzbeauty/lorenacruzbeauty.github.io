@@ -545,6 +545,30 @@
     .opinion p { margin: 22px 0 20px; font: italic 400 21px/1.55 var(--display); color: var(--tinta); }
     .opinion cite { font-style: normal; color: var(--bronce); font: 500 11.5px var(--sans); letter-spacing: .22em; text-transform: uppercase; }
 
+    /* ============ ESTRELLAS Y FORMULARIO DE OPINIÓN ============ */
+    .estrellas { display: inline-flex; gap: 3px; color: var(--bronce); vertical-align: middle; }
+    .estrellas svg { width: 16px; height: 16px; }
+    .estrellas .vacia { opacity: .25; }
+    .opiniones-resumen { display: flex; align-items: center; gap: 10px; margin: -28px 0 32px; color: var(--suave); font-size: 15px; }
+    .opiniones-resumen strong { font: 400 30px/1 var(--display); color: var(--tinta); }
+    .opinion .estrellas { margin-top: 18px; }
+    .opinion .estrellas + p { margin-top: 10px; }
+    .form-opinion { margin-top: 20px; padding-top: 20px; border-top: 1px dashed var(--oro-fino); }
+    .form-opinion h4 { margin: 0 0 4px; font: 500 12px/1.3 var(--sans); letter-spacing: .26em; text-transform: uppercase; color: var(--tinta); }
+    .form-opinion .aviso { margin: 8px 0 14px; }
+    .elegir-estrellas { display: flex; gap: 6px; margin: 0 0 14px; }
+    .elegir-estrellas button { background: none; border: 0; padding: 4px; cursor: pointer; color: var(--linea); transition: color .15s, transform .15s; -webkit-tap-highlight-color: transparent; }
+    .elegir-estrellas button svg { width: 34px; height: 34px; display: block; }
+    .elegir-estrellas button.on { color: var(--bronce); }
+    .elegir-estrellas button:active { transform: scale(.9); }
+    .form-opinion textarea.input { height: auto; min-height: 96px; padding: 12px 16px; resize: vertical; line-height: 1.5; }
+    .form-opinion .btn { margin-top: 14px; }
+
+    /* ============ LISTA DE ESPERA ============ */
+    .lista-espera { margin-top: 20px; padding: 20px; border: 1px dashed var(--oro-fino); display: grid; gap: 12px; }
+    .lista-espera h4 { margin: 0; font: 500 12px/1.3 var(--sans); letter-spacing: .26em; text-transform: uppercase; color: var(--tinta); }
+    .lista-espera .aviso { margin: 0 0 4px; }
+
     /* ============ HORARIOS Y CONTACTO ============ */
     .contacto-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 56px; align-items: start; }
     @media (min-width: 900px) { .contacto-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(56px, 8vw, 120px); } }
@@ -876,6 +900,7 @@
         <header class="titulo-seccion revelar">
           <div><span class="eyebrow">Clientes</span><h2>Opiniones</h2></div>
         </header>
+        <div id="opinionesResumen" class="opiniones-resumen" hidden></div>
         <div id="opiniones" class="opiniones"></div>
       </div>
     </section>
@@ -1063,7 +1088,8 @@
       afuera: '<path d="M7 17L17 7M8 7h9v9"/>',
       rayo: '<path d="M13 2.5L4.5 13.5H12l-1 8 8.5-11H12l1-8z"/>',
       pausa: '<path d="M9 5v14M15 5v14"/>',
-      play: '<path d="M8 5.5v13l10-6.5z"/>'
+      play: '<path d="M8 5.5v13l10-6.5z"/>',
+      estrella: '<path fill="currentColor" stroke="none" d="M12 2.6l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.6l1.2-6.5L2.5 9.5l6.6-.9z"/>'
     };
     function icono(nombre) {
       const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1496,18 +1522,97 @@
       armarCarril(fotos);
     }
 
-    function renderOpiniones() {
-      if (!EXTRA.opiniones.length) return;
+    function estrellasEl(n) {
+      const c = el("span", "estrellas");
+      c.setAttribute("role", "img");
+      c.setAttribute("aria-label", n + " de 5 estrellas");
+      for (let i = 1; i <= 5; i++) {
+        const e = icono("estrella");
+        if (i > n) e.classList.add("vacia");
+        c.appendChild(e);
+      }
+      return c;
+    }
+
+    async function renderOpiniones() {
+      let lista = EXTRA.opiniones.map(function (o) { return { autor: o.autor, texto: o.texto, estrellas: 0 }; });
+      let resumen = null;
+      try {
+        const r = await rpc("opiniones_publicas", {});
+        if (r && r.items && r.items.length) { lista = r.items; resumen = r; }
+      } catch (e) { /* si falla, queda lo que haya en el código */ }
+      if (!lista.length) return;
       const cont = $("opiniones");
       cont.replaceChildren();
-      EXTRA.opiniones.forEach(function (o) {
+      lista.forEach(function (o) {
         const caja = el("figure", "tarjeta opinion revelar");
+        if (o.estrellas) caja.appendChild(estrellasEl(o.estrellas));
         caja.appendChild(el("p", "", o.texto));
         caja.appendChild(el("cite", "", o.autor));
         cont.appendChild(caja);
         observar(caja);
       });
+      if (resumen && resumen.total) {
+        const rs = $("opinionesResumen");
+        rs.replaceChildren(el("strong", "", String(resumen.promedio).replace(".", ",")), estrellasEl(Math.round(resumen.promedio)),
+          el("span", "", "· " + resumen.total + (resumen.total === 1 ? " opinión" : " opiniones")));
+        rs.hidden = false;
+      }
       $("seccionOpiniones").hidden = false;
+    }
+
+    // Formulario para que la clienta deje su opinión desde su turno
+    function formularioOpinion(token) {
+      const f = el("div", "form-opinion");
+      f.appendChild(el("h4", "", "¿Cómo te fue?"));
+      f.appendChild(el("p", "aviso", "Tu opinión ayuda a otras clientas. Se publica con tu nombre de pila."));
+      let nota = 0;
+      const fila = el("div", "elegir-estrellas");
+      fila.setAttribute("role", "radiogroup");
+      fila.setAttribute("aria-label", "Puntaje");
+      const botones = [];
+      for (let i = 1; i <= 5; i++) {
+        const b = el("button");
+        b.type = "button";
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-checked", "false");
+        b.setAttribute("aria-label", i + (i === 1 ? " estrella" : " estrellas"));
+        b.appendChild(icono("estrella"));
+        b.onclick = function () {
+          nota = i;
+          botones.forEach(function (x, k) { x.classList.toggle("on", k < i); x.setAttribute("aria-checked", String(k === i - 1)); });
+        };
+        botones.push(b);
+        fila.appendChild(b);
+      }
+      f.appendChild(fila);
+      const txt = el("textarea", "input");
+      txt.maxLength = 400;
+      txt.placeholder = "Contanos cómo fue tu experiencia";
+      txt.setAttribute("aria-label", "Tu opinión");
+      f.appendChild(txt);
+      const enviar = el("button", "btn btn-oro", "Publicar opinión");
+      enviar.type = "button";
+      enviar.onclick = async function () {
+        if (!nota) { aviso("Elegí un puntaje de 1 a 5 estrellas."); return; }
+        if (txt.value.trim().length < 5) { aviso("Escribí al menos unas palabras."); return; }
+        enviar.disabled = true;
+        try {
+          const r = await rpc("dejar_opinion", { p_token: token, p_estrellas: nota, p_texto: txt.value });
+          if (r.ok) {
+            f.replaceChildren(el("h4", "", "¡Gracias por tu opinión!"), el("p", "aviso", "Ya está publicada en la página."));
+            renderOpiniones();
+          } else {
+            enviar.disabled = false;
+            aviso(r.error === "ya_opino" ? "Ya dejaste tu opinión de este turno." : "No pudimos publicar tu opinión. Probá de nuevo.");
+          }
+        } catch (e) {
+          enviar.disabled = false;
+          aviso("No hay conexión. Probá de nuevo.");
+        }
+      };
+      f.appendChild(enviar);
+      return f;
     }
 
     // ---------- Reserva: pasos ----------
@@ -1577,7 +1682,8 @@
         const activo = sel.dia && fechaISO(sel.dia) === fechaISO(d);
         const b = el("button", "dia");
         b.type = "button";
-        b.disabled = sinTurnos;
+        // Un día completo (no cerrado) se puede abrir para anotarse en la lista de espera
+        b.disabled = sinTurnos && (cerrado || i === 0);
         b.setAttribute("aria-pressed", activo ? "true" : "false");
         b.setAttribute("aria-label", cap(fechaLinda(d)) + (sinTurnos ? (cerrado ? ", cerrado" : ", sin horarios libres") : ""));
         b.appendChild(el("span", "d-sem", i === 0 ? "Hoy" : nombresCortos[d.getDay()]));
@@ -1617,7 +1723,11 @@
         return;
       }
       const horas = generarHoras(sel.dia, sel.servicio);
-      if (!horas.length) { cont.appendChild(el("p", "aviso", "No quedan horarios libres para este día. Probá con otro.")); return; }
+      if (!horas.length) {
+        cont.appendChild(el("p", "aviso", "No quedan horarios libres para este día. Probá con otro."));
+        if (franjasDia(sel.dia.getDay()).length && fechaISO(sel.dia) > fechaISO(new Date())) cont.appendChild(formularioEspera());
+        return;
+      }
       const grupos = [
         ["Mañana", function (m) { return m < 13 * 60; }],
         ["Tarde", function (m) { return m >= 13 * 60 && m < 20 * 60; }],
@@ -1641,6 +1751,44 @@
         });
         cont.appendChild(grilla);
       });
+    }
+
+    // Lista de espera: si el día está completo, la clienta deja sus datos y el estudio le avisa si se libera un lugar
+    function formularioEspera() {
+      const f = el("div", "lista-espera");
+      f.appendChild(el("h4", "", "¿Querés que te avisemos?"));
+      f.appendChild(el("p", "aviso", "Dejá tu nombre y tu WhatsApp. Si se libera un lugar ese día, te escribimos."));
+      const nom = el("input", "input");
+      nom.type = "text"; nom.maxLength = 60; nom.placeholder = "Tu nombre"; nom.autocomplete = "name";
+      nom.setAttribute("aria-label", "Tu nombre");
+      nom.value = $("nombre").value;
+      const tel = el("input", "input");
+      tel.type = "tel"; tel.maxLength = 20; tel.placeholder = "Tu WhatsApp. Ej: 3871234567"; tel.autocomplete = "tel"; tel.inputMode = "tel";
+      tel.setAttribute("aria-label", "Tu WhatsApp");
+      tel.value = $("telefono").value;
+      const enviar = el("button", "btn btn-oro", "Avisarme si se libera");
+      enviar.type = "button";
+      enviar.onclick = async function () {
+        if (nom.value.trim().length < 2) { aviso("Escribí tu nombre."); return; }
+        if (soloDigitos(tel.value).length < 8) { aviso("Revisá tu WhatsApp: con código de área, sin 0 ni 15."); return; }
+        enviar.disabled = true;
+        try {
+          const r = await rpc("anotar_espera", { p_servicio_id: sel.servicio.id, p_fecha: fechaISO(sel.dia), p_nombre: nom.value, p_telefono: tel.value, p_trampa: "" });
+          if (r.ok) {
+            f.replaceChildren(el("h4", "", "¡Listo, te anotamos!"),
+              el("p", "aviso", "Si se libera un lugar, te escribimos por WhatsApp. Mientras tanto, podés elegir otro día."));
+          } else {
+            enviar.disabled = false;
+            aviso(r.error === "limite" ? "Ya estás en 3 listas de espera. Esperá a que te avisen." :
+              r.error === "demasiados" ? "Hiciste muchos intentos. Probá de nuevo más tarde." : "No pudimos anotarte. Probá de nuevo.");
+          }
+        } catch (e) {
+          enviar.disabled = false;
+          aviso("No hay conexión. Probá de nuevo.");
+        }
+      };
+      f.appendChild(nom); f.appendChild(tel); f.appendChild(enviar);
+      return f;
     }
 
     function soloDigitos(t) { return String(t || "").replace(/\D/g, ""); }
@@ -2235,7 +2383,8 @@
       } else if (t.estado !== "activo") {
         caja.appendChild(el("p", "mt-msg", "Este turno está cancelado."));
       } else if (paso) {
-        caja.appendChild(el("p", "mt-msg", "Este turno ya pasó."));
+        caja.appendChild(el("p", "mt-msg", t.ya_opino ? "Gracias por tu opinión. ¡Te esperamos de nuevo!" : "Este turno ya pasó."));
+        if (t.puede_opinar) caja.appendChild(formularioOpinion(token));
       } else {
         if (t.pago_estado === "pagado") caja.appendChild(el("p", "mt-msg", "✓ Seña pagada (" + plata(t.pago_monto) + "). Tu turno está confirmado."));
         else if (t.pago_metodo === "efectivo") caja.appendChild(el("p", "mt-msg", "Pagás en efectivo en el local. No hace falta pagar nada online."));
